@@ -32,13 +32,26 @@ func (sh *SubscriptionHandler) SetCheckOrigin(fn func(r *http.Request) bool) {
 	sh.upgrader.CheckOrigin = fn
 }
 
-func (sh *SubscriptionHandler) runQuery(ctx context.Context, socket *websocket.Conn, queryData *graphQLWSRequest) bool {
+func (sh *SubscriptionHandler) dryRunQuery(ctx context.Context, socket *websocket.Conn, queryData *graphQLWSRequest) bool {
 	res := graphql.Do(graphql.Params{
 		Schema:         sh.schema,
 		RequestString:  queryData.Payload.Query,
 		VariableValues: queryData.Payload.Variables,
 		OperationName:  queryData.Payload.OperationName,
 		Context:        ctx,
+	})
+
+	return len(res.Errors) == 0
+}
+
+func (sh *SubscriptionHandler) runQuery(ctx context.Context, socket *websocket.Conn, queryData *graphQLWSRequest, rootObject map[string]interface{}) bool {
+	res := graphql.Do(graphql.Params{
+		Schema:         sh.schema,
+		RequestString:  queryData.Payload.Query,
+		VariableValues: queryData.Payload.Variables,
+		OperationName:  queryData.Payload.OperationName,
+		Context:        ctx,
+		RootObject:     rootObject,
 	})
 
 	err := sendGraphWSMessage(socket, graphQLWSMessage{
@@ -67,9 +80,9 @@ func (sh *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	ctx := context.WithValue(r.Context(), CTXGraphQLWSID, wsId)
 
 	// On Change Callbacks
-	onChangeChannel := make(chan interface{})
-	onChange := func() {
-		onChangeChannel <- nil
+	onChangeChannel := make(chan map[string]interface{})
+	onChange := func(data map[string]interface{}) {
+		onChangeChannel <- data
 	}
 
 	// Track Subscribed Topics
@@ -119,13 +132,13 @@ func (sh *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Run the first query
-	subRunning := sh.runQuery(ctx, socket, m)
+	subRunning := sh.dryRunQuery(ctx, socket, m)
 
 	// Loop until a stop message or disconnect is received
 	for subRunning {
 		select {
-		case <-onChangeChannel:
-			subRunning = sh.runQuery(ctx, socket, m)
+		case data := <-onChangeChannel:
+			subRunning = sh.runQuery(ctx, socket, m, data)
 		case msg := <-newMessage:
 			if msg.Type == "stop" || msg.Type == "disconnected" {
 				subRunning = false

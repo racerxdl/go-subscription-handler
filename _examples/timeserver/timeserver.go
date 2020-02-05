@@ -17,6 +17,16 @@ var rootSubscriptions = graphql.ObjectConfig{
             Type: graphql.String,
             Resolve: func(p graphql.ResolveParams) (interface{}, error) {
                 err := subhandler.Subscribe(p.Context, "serverTime")
+
+                if p.Source != nil {
+                    // We received a event data
+                    v, ok := p.Source.(map[string]interface{})
+                    if ok && v["time"] != nil {
+                        return v["time"], nil
+                    }
+                }
+
+                // We didn't receive a event data, so resolve normally
                 return time.Now().String(), err
             },
         },
@@ -57,16 +67,16 @@ func MakeBusNotifier(bus EventBus.Bus) *BusNotifier {
     }
 }
 
-func (bn *BusNotifier) Subscribe(topic string, cb func()) {
+func (bn *BusNotifier) Subscribe(topic string, cb func(data map[string]interface{})) {
     bn.bus.Subscribe(topic, cb)
 }
 
-func (bn *BusNotifier) Unsubscribe(topic string, cb func()) {
+func (bn *BusNotifier) Unsubscribe(topic string, cb func(data map[string]interface{})) {
     bn.bus.Unsubscribe(topic, cb)
 }
 
-func (bn *BusNotifier) Notify(topic string) {
-    bn.bus.Publish(topic)
+func (bn *BusNotifier) Notify(topic string, data map[string]interface{}) {
+    bn.bus.Publish(topic, data)
 }
 
 // Initialize a Sub Handler
@@ -87,8 +97,14 @@ func main() {
     // Create a goroutine to send notifications through notifier
     go func() {
         for {
-            notifier.Notify("serverTime")
+            data := map[string]interface{}{
+                "time": time.Now().String(),
+            }
+            notifier.Notify("serverTime", data)
             time.Sleep(time.Second) // Sleep some interval
+
+            // This also works, makes the resolver decide what to do
+            notifier.Notify("serverTime", nil)
         }
     }()
 
