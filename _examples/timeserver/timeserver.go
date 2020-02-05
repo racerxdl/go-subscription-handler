@@ -1,18 +1,23 @@
-# Golang Simple GraphQL Subscription Handler
+package main
 
-## Usage
+import (
+    "fmt"
+    "github.com/asaskevich/EventBus"
+    "github.com/graphql-go/graphql"
+    "github.com/graphql-go/handler"
+    "github.com/racerxdl/go-subscription-handler/subhandler"
+    "net/http"
+    "time"
+)
 
-Subscription node:
-
-```go
 var rootSubscriptions = graphql.ObjectConfig{
     Name: "RootSubscriptions",
     Fields: graphql.Fields{
         "serverTime": &graphql.Field{
-            Type: graphql.Float,
+            Type: graphql.String,
             Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-                err := subHandler.Subscribe(p.Context, "serverTime")
-                return time.Now().Unix(), err
+                err := subhandler.Subscribe(p.Context, "serverTime")
+                return time.Now().String(), err
             },
         },
     },
@@ -40,23 +45,8 @@ func GetSchema() (graphql.Schema, error) {
     return graphql.NewSchema(schemaConfig)
 }
 
-```
 
-Main Code:
-
-```go
-package main
-
-import (
-    "github.com/asaskevich/EventBus"
-    "github.com/graphql-go/handler"
-    "github.com/racerxdl/go-subscription-handler/subhandler"
-    "net/http"
-    "time"
-    "fmt"
-)
-
-// Create a notifier 
+// Create a notifier
 type BusNotifier struct {
     bus EventBus.Bus // You can use any pub-sub lib for that
 }
@@ -90,7 +80,7 @@ func main() {
         Pretty:     true,
         Playground: true,
     })
-    
+
     // Initialize our notifier
     notifier := MakeBusNotifier(EventBus.New())
 
@@ -113,12 +103,13 @@ func main() {
 
     // Attach the normal query / mutation handlers
     http.Handle("/", h)
-    
+
     // Attach the subscription handlers
     http.Handle("/subscriptions", sh)
-    
-    fmt.Println("Listening in :8080")
-    http.ListenAndServe(":8080", nil)
-}
-```
 
+    fmt.Println("Listening in :8080")
+    err := http.ListenAndServe(":8080", nil)
+    if err != nil {
+        panic(err)
+    }
+}
